@@ -47,19 +47,95 @@ def check_if_folder_has_data(folder_path):
     return len(files) > 0
 
 def move_files_to_target(source_dir, target_dir):
-    """Memindahkan file dari folder data/ ke subfolder tujuan"""
+    """Memindahkan file dari folder data/ ke subfolder tujuan dengan error handling"""
     if source_dir == target_dir:
         return
     
     os.makedirs(target_dir, exist_ok=True)
+    moved_count = 0
+    
     for item in os.listdir(source_dir):
         s_path = os.path.join(source_dir, item)
         # Pindahkan hanya file (bukan folder tahun/bulan lain)
         if os.path.isfile(s_path):
             try:
-                shutil.move(s_path, os.path.join(target_dir, item))
+                t_path = os.path.join(target_dir, item)
+                shutil.move(s_path, t_path)
+                moved_count += 1
             except Exception as e:
                 print(f"   [Error] Gagal memindahkan {item}: {e}")
+    
+    if moved_count > 0:
+        print(f"      [Move] Berhasil memindahkan {moved_count} file ke: {target_dir}")
+
+def get_orphaned_files_in_root(root_data_dir):
+    """Deteksi file NetCDF yang tertinggal di folder data/ (belum dipindahkan)
+    
+    Return: dict dengan mapping path_folder_bulan -> [files]
+    Contoh: {'2020/01': ['file1.nc', 'file2.nc']}
+    """
+    orphaned = {}
+    
+    if not os.path.exists(root_data_dir):
+        return orphaned
+    
+    # Cek hanya file .nc di root data/
+    for item in os.listdir(root_data_dir):
+        item_path = os.path.join(root_data_dir, item)
+        
+        # Kita hanya peduli dengan file NetCDF, bukan folder
+        if os.path.isfile(item_path) and item.endswith('.nc'):
+            # Ekstrak tahun dan bulan dari nama file
+            # Format nama file: dt_global_allsat_phy_l4_YYYYMMDD_*.nc
+            if '_' in item and len(item) > 15:
+                parts = item.split('_')
+                if len(parts) >= 6:
+                    date_part = parts[5]  # YYYYMMDD
+                    if date_part.isdigit() and len(date_part) == 8:
+                        year = date_part[0:4]
+                        month = date_part[4:6]
+                        folder_key = f"{year}/{month}"
+                        
+                        if folder_key not in orphaned:
+                            orphaned[folder_key] = []
+                        orphaned[folder_key].append(item)
+    
+    return orphaned
+
+def recover_orphaned_files(root_data_dir, output_folder):
+    """Pindahkan file yang tertinggal di root data/ ke folder tujuan yang sesuai
+    
+    Berguna saat ada gangguan (crash/mati listrik) dan proses move belum selesai.
+    Return: True jika ada file yang dipindahkan, False jika tidak ada
+    """
+    orphaned = get_orphaned_files_in_root(root_data_dir)
+    
+    if not orphaned:
+        return False
+    
+    print("\n   [Recovery] Ditemukan file tertinggal di folder data/:")
+    total_moved = 0
+    
+    for folder_key, files in orphaned.items():
+        target_path = os.path.join(root_data_dir, output_folder, folder_key)
+        os.makedirs(target_path, exist_ok=True)
+        
+        for file in files:
+            src_path = os.path.join(root_data_dir, file)
+            dst_path = os.path.join(target_path, file)
+            
+            try:
+                shutil.move(src_path, dst_path)
+                print(f"   [Recovery] Pindah {file} ke {folder_key}/")
+                total_moved += 1
+            except Exception as e:
+                print(f"   [Recovery] Gagal pindah {file}: {e}")
+    
+    if total_moved > 0:
+        print(f"   [Recovery] Total {total_moved} file berhasil dipulihkan")
+    
+    return total_moved > 0
 
 def check_exists(path):
+    """Cek apakah folder sudah ada dan berisi file"""
     return os.path.exists(path) and len(os.listdir(path)) > 0

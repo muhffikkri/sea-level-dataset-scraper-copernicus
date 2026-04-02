@@ -3,7 +3,7 @@ import time
 import argparse
 import logging
 from src.scraper import CopernicusScraper
-from src.utils import get_base_data_path, is_download_finished, move_files_to_target, check_exists
+from src.utils import get_base_data_path, is_download_finished, move_files_to_target, check_exists, recover_orphaned_files
 
 def setup_year_logger(year):
     from datetime import datetime
@@ -98,6 +98,13 @@ def main():
         bot.driver.get(root_url)
         time.sleep(5)
         bot.hide_intrusive_elements()
+        
+        # [RECOVERY] Sebelum crawl, cek dan pulihkan file yang tertinggal dari crash sebelumnya
+        print("\n[Recovery] Memeriksa file tertinggal dari proses sebelumnya...")
+        if recover_orphaned_files(root_data_dir, args.output):
+            print("[Recovery] File berhasil dipulihkan dan dipindahkan ke folder tujuan")
+        else:
+            print("[Recovery] Tidak ada file tertinggal, sistem siap dimulai")
         
         all_years = bot.get_folder_names()
         target_years = [y for y in all_years if y.isdigit() and int(start_year) <= int(y) <= int(end_year)]
