@@ -13,13 +13,31 @@ class CopernicusScraper:
         # Masukkan path binary chrome jika masih error "binary not found"
         # options.binary_location = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
         
+        # Path absolut sangat disarankan untuk Windows
+        abs_download_path = os.path.abspath(download_path)
+        
         prefs = {
-            "download.default_directory": os.path.abspath(download_path),
+            "download.default_directory": abs_download_path,
             "download.prompt_for_download": False,
+            "directory_upgrade": True,
+            "safebrowsing.enabled": True,
+            "profile.default_content_setting_values.automatic_downloads": 1, 
         }
+    
         options.add_experimental_option("prefs", prefs)
         
-        self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        # Tambahkan argumen agar Chrome tidak memunculkan info bar "Chrome is being controlled..."
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
+
+        self.driver.execute_cdp_cmd("Page.setDownloadBehavior", {
+            "behavior": "allow",
+            "downloadPath": abs_download_path
+        })
+        self.driver = webdriver.Chrome(
+            service=Service(ChromeDriverManager().install()), 
+            options=options
+        )
         self.wait = WebDriverWait(self.driver, 15)
 
     def debug_page_content(self):
@@ -51,7 +69,7 @@ class CopernicusScraper:
         """Klik tombol 'All' untuk memilih semua file"""
         try:
             btn_all = self.wait.until(EC.element_to_be_clickable(
-                (By.XPATH, "//div[contains(@class, 'wk-button') and (text()='All' or text()='Select All') and not(contains(@class, 'disabled'))]")
+                (By.XPATH, "//div[contains(@class, 'wk-button') and (text()='All' or text()='Select all') and not(contains(@class, 'disabled'))]")
             ))
             print("   [Action] Klik tombol 'All'...")
             btn_all.click()
@@ -59,6 +77,24 @@ class CopernicusScraper:
             return True
         except:
             return False
+
+    def wait_until_download_ready(self):
+        """Menunggu sampai teks 'Downloading' hilang dari tombol"""
+        print("   [Wait] Menunggu proses download browser selesai...")
+        
+        # 1. Tunggu tombol tidak lagi berkata 'Downloading'
+        start_wait = time.time()
+        while time.time() - start_wait < 1200: # Max 20 menit
+            try:
+                btn = self.driver.find_element(By.XPATH, "//div[contains(@class, 'wk-button') and contains(@class, 'primary')]")
+                if "Downloading" not in btn.text:
+                    break
+            except:
+                break # Tombol mungkin hilang/berubah saat pindah page
+            time.sleep(10)
+        
+        # 2. Cek fisik file di folder (menggunakan helper dari utils)
+        # Kita panggil di main.py saja agar lebih clean
 
     def click_download_button(self):
         """Klik tombol Download yang sudah aktif"""
