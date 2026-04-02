@@ -1,5 +1,6 @@
 import time
 import os
+import subprocess
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -212,3 +213,38 @@ class CopernicusScraper:
 
     def quit(self):
         self.driver.quit()
+
+    def shutdown(self, immediate=False):
+        """Shutdown browser.
+
+        immediate=True dipakai saat Ctrl+C agar proses download/browser langsung dihentikan.
+        """
+        driver = getattr(self, "driver", None)
+        if driver is None:
+            return
+
+        service_process = None
+        service = getattr(driver, "service", None)
+        if service is not None:
+            service_process = getattr(service, "process", None)
+
+        try:
+            driver.quit()
+        except Exception:
+            pass
+
+        if immediate and service_process is not None:
+            pid = getattr(service_process, "pid", None)
+            if pid:
+                try:
+                    # /T: kill child process tree, /F: force terminate
+                    subprocess.run(
+                        ["taskkill", "/PID", str(pid), "/T", "/F"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=False,
+                    )
+                except Exception:
+                    pass
+
+        self.driver = None

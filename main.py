@@ -139,6 +139,7 @@ def main():
     root_data_dir = get_base_data_path()
     
     bot = CopernicusScraper(root_data_dir, headless=args.headless)
+    interrupted = False
     
     try:
         bot.driver.get(root_url)
@@ -167,11 +168,18 @@ def main():
             time.sleep(2)
             logger.info("Selesai proses tahun %s", year)
 
+    except KeyboardInterrupt:
+        interrupted = True
+        print("\n[Stop] Ctrl+C terdeteksi. Menghentikan browser dan download sekarang...")
     finally:
-        # Safety wait sebelum kill script
-        print("\n[*] Sinkronisasi terakhir...")
-        is_download_finished(root_data_dir, timeout=600)
-        bot.quit()
+        if interrupted:
+            bot.shutdown(immediate=True)
+            print("[Stop] Proses dihentikan paksa.")
+        else:
+            # Safety wait saat shutdown normal
+            print("\n[*] Sinkronisasi terakhir...")
+            is_download_finished(root_data_dir, timeout=600)
+            bot.shutdown(immediate=False)
 
 if __name__ == "__main__":
     main()
