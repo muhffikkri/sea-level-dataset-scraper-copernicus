@@ -1,70 +1,67 @@
 import os
+import time
 from src.scraper import CopernicusScraper
 
 def crawl_recursive(bot):
-    """
-    Fungsi rekursif untuk masuk ke semua subfolder 
-    sampai menemukan tombol download yang aktif.
-    """
-    # 1. Cek apakah di halaman ini kita bisa download
-    if bot.is_download_page():
-        bot.click_download_all()
-        return # Selesai di cabang ini, kembali ke level atas
+    print(f"\n[*] Scanning page: {bot.driver.current_url}")
+    bot.debug_page_content() # TRIGGER DEBUG
 
-    # 2. Jika tidak bisa download, cari folder yang bisa dimasuki
-    folders = bot.get_folder_names()
-    
-    if not folders:
-        print("   [!] Tidak ada folder atau tombol download di halaman ini.")
+    # 1. Cek apakah ada file yang bisa di-download
+    if bot.has_files():
+        print("   [!] File ditemukan! Mencoba proses download...")
+        if bot.click_select_all():
+            bot.click_download_button()
+        else:
+            print("   [!] Tombol 'All' tidak ditemukan atau disabled.")
         return
 
-    for folder in folders:
+    # 2. Jika tidak ada file, cari folder
+    folders = bot.get_folder_names()
+    if not folders:
+        print("   [!] Halaman kosong (tidak ada folder/file).")
+        return
+
+    # Salin list folder agar tidak bermasalah saat navigasi back
+    folder_list = list(folders)
+    for folder in folder_list:
         print(f"   Entering folder: {folder}")
-        bot.click_folder(folder)
-        
-        # Rekursi: Masuk lebih dalam lagi
-        crawl_recursive(bot)
-        
-        # Setelah selesai di dalam, kembali ke folder induk
-        print(f"   Going back from: {folder}")
-        bot.go_back()
+        try:
+            bot.click_folder(folder)
+            crawl_recursive(bot)
+            print(f"   Going back from: {folder}")
+            bot.driver.back()
+            time.sleep(3)
+        except Exception as e:
+            print(f"   [Error] Gagal masuk ke folder {folder}: {e}")
+            bot.driver.refresh() # Coba refresh jika stuck
 
 def main():
-    root_url = input("Masukkan Link Root Copernicus: ")
-    start_year = int(input("Dari Tahun (e.g. 1997): "))
-    end_year = int(input("Sampai Tahun (e.g. 2000): "))
-    
-    download_dir = os.path.join(os.getcwd(), "data")
-    if not os.path.exists(download_dir):
-        os.makedirs(download_dir)
+    root_url = input("Masukkan Link Root: ").strip()
+    start_year = input("Dari Tahun: ").strip()
+    end_year = input("Sampai Tahun: ").strip()
+
+    download_dir = "data"
+    if not os.path.exists(download_dir): os.makedirs(download_dir)
 
     bot = CopernicusScraper(download_dir)
     
     try:
-        print(f"\n[*] Membuka Root URL: {root_url}")
-        bot.navigate_to(root_url)
+        bot.driver.get(root_url)
+        time.sleep(5) # Tunggu loading awal
         
-        # Ambil daftar tahun di root
-        all_years = bot.get_folder_names()
-        target_years = [y for y in all_years if y.isdigit() and start_year <= int(y) <= end_year]
+        all_entries = bot.get_folder_names()
+        target_years = [y for y in all_entries if y.isdigit() and int(start_year) <= int(y) <= int(end_year)]
         
-        print(f"[*] Tahun yang akan diproses: {target_years}")
+        print(f"Target Tahun: {target_years}")
 
         for year in target_years:
-            print(f"\n--- Memulai pemrosesan tahun: {year} ---")
+            print(f"\n=== PROCESSING YEAR {year} ===")
             bot.click_folder(year)
-            
-            # Mulai penggalian otomatis ke dalam (Bulan -> Hari -> dst)
             crawl_recursive(bot)
-            
-            # Kembali ke Root untuk ganti tahun
-            bot.navigate_to(root_url)
-            print(f"--- Selesai tahun: {year} ---")
+            bot.driver.get(root_url)
+            time.sleep(3)
 
-    except Exception as e:
-        print(f"An error occurred: {e}")
     finally:
-        print("\n[*] Scraper selesai. Menutup browser...")
         bot.quit()
 
 if __name__ == "__main__":
