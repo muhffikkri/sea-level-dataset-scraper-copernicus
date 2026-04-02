@@ -92,6 +92,29 @@ class CopernicusScraper:
         elements = self.driver.find_elements(By.XPATH, xpath)
         return [el.text.strip() for el in elements if el.text.strip() != ""]
 
+    def get_file_dates(self):
+        """Ekstrak daftar tanggal file yang tersedia di halaman ini
+        
+        Return: list of YYYYMMDD strings, misal ['20200101', '20200102', ...]
+        Parse dari nama file format: dt_global_allsat_phy_l4_YYYYMMDD_*.nc
+        """
+        dates = []
+        try:
+            xpath = "//div[contains(@class, 'entry') and contains(@class, 'file')]"
+            file_elements = self.driver.find_elements(By.XPATH, xpath)
+            
+            for element in file_elements:
+                filename = element.text.strip()
+                # Parse: dt_global_allsat_phy_l4_YYYYMMDD_*.nc
+                parts = filename.split('_')
+                if len(parts) >= 6 and parts[5].isdigit() and len(parts[5]) == 8:
+                    dates.append(parts[5])  # YYYYMMDD
+                    
+        except Exception as e:
+            print(f"   [Warn] Gagal ekstrak tanggal file: {e}")
+        
+        return sorted(dates)
+
     def has_files(self):
         """Cek apakah ada file (bukan folder) di halaman ini"""
         xpath = "//div[contains(@class, 'entry') and contains(@class, 'file')]"

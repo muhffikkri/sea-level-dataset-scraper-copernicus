@@ -136,6 +136,39 @@ def recover_orphaned_files(root_data_dir, output_folder):
     
     return total_moved > 0
 
+def get_downloaded_dates(target_folder):
+    """Ekstrak daftar tanggal yang sudah didownload dari file yang ada di folder
+    
+    Return: set of YYYYMMDD strings, misal {'20200101', '20200102', ...}
+    """
+    downloaded = set()
+    
+    if not os.path.exists(target_folder):
+        return downloaded
+    
+    try:
+        for filename in os.listdir(target_folder):
+            if filename.endswith('.nc'):
+                # Parse: dt_global_allsat_phy_l4_YYYYMMDD_*.nc
+                parts = filename.split('_')
+                if len(parts) >= 6 and parts[5].isdigit() and len(parts[5]) == 8:
+                    downloaded.add(parts[5])  # YYYYMMDD
+    except Exception as e:
+        print(f"   [Warn] Gagal scan folder untuk downloaded dates: {e}")
+    
+    return downloaded
+
+def get_missing_dates(available_dates, downloaded_dates):
+    """Hitung tanggal mana yang belum didownload
+    
+    Args:
+        available_dates: list of YYYYMMDD dari website
+        downloaded_dates: set of YYYYMMDD yang sudah ada di folder
+    
+    Return: list of missing YYYYMMDD strings yang perlu didownload
+    """
+    return [d for d in available_dates if d not in downloaded_dates]
+
 def check_exists(path):
     """Cek apakah folder sudah ada dan berisi file"""
     return os.path.exists(path) and len(os.listdir(path)) > 0

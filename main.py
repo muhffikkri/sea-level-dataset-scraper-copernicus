@@ -1,9 +1,11 @@
 import os
 import time
+import shutil
 import argparse
 import logging
 from src.scraper import CopernicusScraper
-from src.utils import get_base_data_path, is_download_finished, move_files_to_target, check_exists, recover_orphaned_files
+from src.utils import (get_base_data_path, is_download_finished, move_files_to_target, 
+                       check_exists, recover_orphaned_files, get_downloaded_dates, get_missing_dates)
 
 def setup_year_logger(year):
     from datetime import datetime
@@ -36,13 +38,32 @@ def crawl_recursive(bot, root_data_dir, current_subpath, args, logger):
     else:
         target_path = os.path.join(root_data_dir, args.output, current_subpath)
 
-    # 1. Skip logic (Hanya jika tidak flat)
-    if not args.flat and check_exists(target_path):
-        print(f"   [Skip] {current_subpath} sudah ada.")
-        logger.info("Skip path existing: %s", current_subpath)
-        return
+    # 1. Smart Resume Logic (Hanya jika tidak flat)
+    if not args.flat and os.path.exists(target_path) and os.listdir(target_path):
+        # Folder sudah ada dan berisi file
+        # Cek apakah ada file yang belum didownload (resume case)
+        if bot.has_files():
+            available_dates = bot.get_file_dates()
+            downloaded_dates = get_downloaded_dates(target_path)
+            missing_dates = get_missing_dates(available_dates, downloaded_dates)
+            
+            if not missing_dates:
+                # Semua sudah ada, skip sepenuhnya
+                print(f"   [Skip] {current_subpath} sudah lengkap ({len(downloaded_dates)} file).")
+                logger.info("Skip path fully downloaded: %s (%d files)", current_subpath, len(downloaded_dates))
+                return
+            else:
+                # Ada yang belum, resume download
+                print(f"   [Resume] {current_subpath}: {len(downloaded_dates)}/{len(available_dates)} file sudah ada")
+                print(f"           Akan download {len(missing_dates)} file yang masih kurang...")
+                logger.info("Resume partial download: %s (have %d/%d, missing %d)", 
+                           current_subpath, len(downloaded_dates), len(available_dates), len(missing_dates))
+        else:
+            # Folder ada tapi tidak ada file di website (subfolder kasus)
+            print(f"   [Info] {current_subpath} sudah ada, melanjutkan ke subfolder...")
+            logger.info("Path already exists with data, checking subfolders: %s", current_subpath)
 
-    # 2. Logika Download
+    # 2. Logika Download (baru atau resume)
     if bot.has_files():
         print(f"   [!] File ditemukan di {current_subpath}. Mendownload...")
         logger.info("File ditemukan pada path: %s", current_subpath)
@@ -57,17 +78,42 @@ def crawl_recursive(bot, root_data_dir, current_subpath, args, logger):
             
             # Tunggu fisik file selesai di folder data/
             if is_download_finished(root_data_dir):
-                # Pindahkan dari data/ ke folder tujuan (misal data/results/1993/01)
-                move_files_to_target(root_data_dir, target_path)
-                print(f"   [Done] Tersimpan di: {target_path}")
-                logger.info("Download selesai dan dipindahkan ke: %s", target_path)
+                # Smart move: skip file yang sudah ada, pindahkan yang baru
+                os.makedirs(target_path, exist_ok=True)
+                
+                moved_new = 0
+                skipped_existing = 0
+                
+                for item in os.listdir(root_data_dir):
+                    s_path = os.path.join(root_data_dir, item)
+                    if os.path.isfile(s_path) and item.endswith('.nc'):
+                        t_path = os.path.join(target_path, item)
+                        
+                        if os.path.exists(t_path):
+                            # File sudah ada, skip
+                            try:
+                                os.remove(s_path)
+                                skipped_existing += 1
+                            except:
+                                pass
+                        else:
+                            # File baru, pindahkan
+                            try:
+                                shutil.move(s_path, t_path)
+                                moved_new += 1
+                            except Exception as e:
+                                logger.error("Gagal pindahkan %s: %s", item, str(e))
+                
+                print(f"   [Done] {moved_new} file baru, {skipped_existing} file existing (skip)")
+                logger.info("Download done: %d new files moved, %d existing files skipped, path: %s", 
+                           moved_new, skipped_existing, target_path)
             else:
                 logger.warning("Timeout menunggu file fisik selesai pada path: %s", current_subpath)
         else:
             logger.error("Gagal klik tombol Select All pada path: %s", current_subpath)
         return
 
-    # 3. Rekursi
+    # 3. Rekursi (jika tidak ada file, telusuri subfolder)
     folders = bot.get_folder_names()
     for folder in folders:
         bot.click_folder(folder)
